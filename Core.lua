@@ -17,7 +17,7 @@ local charDefaults = {
 	spells = {},
 }
 
-ACore.New(ADDON, ns, { db = "ACooldownsDB", defaults = defaults, char = "ACooldownsCharDB", charDefaults = charDefaults })
+ACore.New(ADDON, ns, { db = "ACooldownsDB", defaults = defaults, profile = true, char = "ACooldownsCharDB", charDefaults = charDefaults })
 
 function ns.TimeText(left)
 	if left >= 3600 then return math.floor(left / 3600 + 0.5) .. "h" end
@@ -91,6 +91,7 @@ end
 
 ACore.Register({
 	name = "ACooldowns",
+	options = function() return ns.Options() end,
 	title = "ACooldowns",
 	slash = "/acd",
 	desc = "cooldown tracker",
