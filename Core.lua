@@ -7,6 +7,8 @@ local defaults = {
 	size = 34,
 	pulse = true,
 	sound = false,
+	text = true,
+	combatOnly = false,
 	minimum = 30,
 	frame = { scale = 1, locked = true, default = { "CENTER", "CENTER", 0, -230 } },
 }
@@ -46,6 +48,8 @@ function ns.Options()
 		UI.Check(db, "vertical", "Stack vertically", changed),
 		UI.Check(db, "pulse", "Pulse when ready", changed),
 		UI.Check(db, "sound", "Sound when ready", changed),
+		UI.Check(db, "text", "Show time left on icons", changed),
+		UI.Check(db, "combatOnly", "Show only in combat", changed),
 		{ text = "Show", title = true },
 		mode("Everything", "all"),
 		mode("Only on cooldown", "cooling"),

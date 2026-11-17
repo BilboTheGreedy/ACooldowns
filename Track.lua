@@ -31,12 +31,15 @@ local function bookSpells()
 	local out = {}
 	if C_SpellBook and C_SpellBook.GetNumSpellBookSkillLines and C_SpellBook.GetSpellBookSkillLineInfo then
 		local bank = Enum and Enum.SpellBookSpellBank and Enum.SpellBookSpellBank.Player or 0
+		local kinds = Enum and Enum.SpellBookItemType
 		for line = 1, C_SpellBook.GetNumSpellBookSkillLines() or 0 do
 			local info = C_SpellBook.GetSpellBookSkillLineInfo(line)
-			if info and not info.shouldHide then
+			local off = info and type(info.offSpecID) == "number" and info.offSpecID ~= 0
+			if info and not info.shouldHide and not off then
 				for slot = (info.itemIndexOffset or 0) + 1, (info.itemIndexOffset or 0) + (info.numSpellBookItems or 0) do
 					local ok, item = pcall(C_SpellBook.GetSpellBookItemInfo, slot, bank)
-					if ok and type(item) == "table" and item.spellID and not item.isPassive and not item.isOffSpec then
+					local learned = ok and type(item) == "table" and not (kinds and kinds.Spell and item.itemType and item.itemType ~= kinds.Spell)
+					if learned and item.spellID and not item.isPassive and not item.isOffSpec then
 						out[#out + 1] = item.spellID
 					end
 				end
@@ -130,11 +133,18 @@ function ns.Rescan()
 end
 
 local function read(e)
-	local start, duration, object
+	local start, duration, object, active
 	if e.kind == "spell" then
 		if C_Spell and C_Spell.GetSpellCooldown then
 			local ok, info = pcall(C_Spell.GetSpellCooldown, e.id)
-			if ok and type(info) == "table" then start, duration = info.startTime, info.duration end
+			if ok and type(info) == "table" then
+				start, duration = info.startTime, info.duration
+				local on, gcd = info.isActive, info.isOnGCD
+				if not ns.IsSecret(on) and type(on) == "boolean" then
+					active = on
+					if not ns.IsSecret(gcd) and gcd == true then active = false end
+				end
+			end
 		elseif GetSpellCooldown then
 			start, duration = GetSpellCooldown(e.id)
 		end
@@ -151,21 +161,24 @@ local function read(e)
 			if ok then start, duration = s, d end
 		end
 	end
-	return start, duration, object
+	return start, duration, object, active
 end
 
 function ns.Update()
 	local now = GetTime()
 	local changed = false
 	for _, e in ipairs(ns.list) do
-		local start, duration, object = read(e)
+		local start, duration, object, active = read(e)
 		local was = e.ready
 		if ns.IsSecret(start) or ns.IsSecret(duration) then
 			e.secret, e.object = true, object
+			e.rawStart, e.rawDuration = start, duration
 			e.start, e.duration = nil, nil
-			e.ready = nil
+			if active == nil then e.ready = nil else e.ready = not active end
+			if e.ready == false then e.pending = true end
 		else
 			e.secret, e.object = false, nil
+			e.rawStart, e.rawDuration = nil, nil
 			if type(start) ~= "number" or type(duration) ~= "number" or duration <= GCD or start <= 0 then
 				if not (e.duration and e.start and e.start + e.duration > now + 0.05 and type(duration) == "number" and duration > 0 and duration <= GCD) then
 					e.start, e.duration = 0, 0
@@ -193,8 +206,10 @@ function ns.Visible()
 	local show = ns.db.show
 	local now = GetTime()
 	for _, e in ipairs(ns.list) do
-		local cooling = not e.secret and ns.Left(e, now) > 0
-		if e.secret or show == "all" or (show == "cooling" and cooling) or (show == "ready" and not cooling) then
+		local cooling
+		if e.secret then cooling = e.ready == false else cooling = ns.Left(e, now) > 0 end
+		local unknown = e.secret and e.ready == nil
+		if unknown or show == "all" or (show == "cooling" and cooling) or (show == "ready" and not cooling) then
 			out[#out + 1] = e
 		end
 	end
@@ -205,6 +220,11 @@ function ns.Announce(e)
 	local text
 	if e.secret then
 		text = e.name
+		if e.ready == true then
+			text = e.name .. " is ready"
+		elseif e.ready == false then
+			text = e.name .. " is on cooldown"
+		end
 	else
 		local left = ns.Left(e)
 		if left > 0 then

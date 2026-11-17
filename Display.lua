@@ -62,7 +62,6 @@ local function createIcon()
 	f.edges = UI.Border(f, { 0, 0, 0, 1 })
 	f.cd = CreateFrame("Cooldown", nil, f, "CooldownFrameTemplate")
 	f.cd:SetAllPoints(f)
-	if f.cd.SetHideCountdownNumbers then f.cd:SetHideCountdownNumbers(true) end
 	f.time = UI.Text(f, "GameFontHighlight", "CENTER", { 1, 1, 1 })
 	f.time:SetPoint("CENTER", 0, 0)
 	f.glow = f:CreateTexture(nil, "OVERLAY")
@@ -99,9 +98,9 @@ local function paintIcon(f, e, now)
 	local left = ns.Left(e, now)
 	if e.secret then
 		f.time:SetText("")
-		f.tex:SetDesaturated(false)
+		f.tex:SetDesaturated(e.ready == false)
 	elseif left > 0 then
-		f.time:SetText(ns.TimeText(left))
+		f.time:SetText(ns.db.text and ns.TimeText(left) or "")
 		f.tex:SetDesaturated(true)
 	else
 		f.time:SetText("")
@@ -125,9 +124,13 @@ end
 
 local function paintBar(b, e, now)
 	local left = ns.Left(e, now)
-	if e.secret then
+	if e.secret and e.ready ~= true then
 		b.right:SetText("")
-		b:SetColor(0.5, 0.5, 0.55, 0.8)
+		if e.ready == false then
+			b:SetColor(0.85, 0.35, 0.3, 0.85)
+		else
+			b:SetColor(0.5, 0.5, 0.55, 0.8)
+		end
 	elseif left > 0 then
 		b:SetMinMaxValues(0, e.duration)
 		b:SetValue(left)
@@ -144,6 +147,7 @@ local function paintBar(b, e, now)
 end
 
 local shown = {}
+local fighting = InCombatLockdown and InCombatLockdown() and true or false
 
 local function layout()
 	if not frame then return end
@@ -167,8 +171,10 @@ local function layout()
 			b:SetPoint("TOPLEFT", frame, "TOPLEFT", 20, -(i - 1) * 20)
 			b.icon:SetTexture(e.icon)
 			b.left:SetText(e.name)
-			if e.secret and e.object and b.SetTimerDuration then
-				pcall(b.SetTimerDuration, b, e.object)
+			if e.secret and e.ready ~= true and e.object and b.SetTimerDuration then
+				local interp = Enum and Enum.StatusBarInterpolation and Enum.StatusBarInterpolation.Immediate or 0
+				local dir = Enum and Enum.StatusBarTimerDirection and Enum.StatusBarTimerDirection.RemainingTime or 1
+				pcall(b.SetTimerDuration, b, e.object, interp, dir)
 			end
 			paintBar(b, e, now)
 			b:Show()
@@ -191,9 +197,14 @@ local function layout()
 				f:SetPoint("TOPLEFT", frame, "TOPLEFT", (i - 1) * step, 0)
 			end
 			f.tex:SetTexture(e.icon)
+			if f.cd.SetHideCountdownNumbers then f.cd:SetHideCountdownNumbers(not e.secret) end
 			if e.secret then
-				if e.object and f.cd.SetCooldownFromDurationObject then
+				if e.ready == true then
+					f.cd:SetCooldown(0, 0)
+				elseif e.object and f.cd.SetCooldownFromDurationObject then
 					pcall(f.cd.SetCooldownFromDurationObject, f.cd, e.object)
+				else
+					pcall(f.cd.SetCooldown, f.cd, e.rawStart, e.rawDuration)
 				end
 			elseif e.duration and e.duration > 0 then
 				f.cd:SetCooldown(e.start, e.duration)
@@ -212,6 +223,7 @@ local function layout()
 	end
 	frame.handle:SetShown(not db.frame.locked)
 	frame.empty:SetShown(#ns.list == 0 and not db.frame.locked)
+	frame:SetShown(not db.combatOnly or fighting or not db.frame.locked)
 end
 ns.Layout = layout
 
@@ -290,4 +302,12 @@ ns:Listen("OPTIONS", function()
 end)
 ns:Listen("LAYOUT_RESET", function()
 	if frame then frame:Restore() end
+end)
+ns:On("PLAYER_REGEN_DISABLED", function()
+	fighting = true
+	if frame then layout() end
+end)
+ns:On("PLAYER_REGEN_ENABLED", function()
+	fighting = false
+	if frame then layout() end
 end)
